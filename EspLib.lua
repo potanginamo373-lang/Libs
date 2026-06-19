@@ -138,6 +138,24 @@ local ESP = {
             RGB       = Color3.fromRGB(255, 255, 255),
             Thickness = 1,
         },
+        Tracers = {
+            Enabled      = false,
+            RGB          = Color3.fromRGB(255, 255, 255),
+            Origin       = "Bottom",
+            Thickness    = 1,
+            Transparency = 1,
+        },
+        OffscreenArrows = {
+            Enabled          = false,
+            RGB              = Color3.fromRGB(255, 255, 255),
+            Size             = 10,
+            ShowDistance     = true,
+            DistanceRGB      = Color3.fromRGB(255, 255, 255),
+            DistanceFontSize = 12,
+            Origin           = "Bottom",
+            Thickness    = 1,
+            Transparency = 1,
+        },
         TeamCheck = {
             Enabled = false,
         },
@@ -1433,18 +1451,25 @@ local function ProcessESP(model, espData)
     local function Hide()
         el.Box.Visible         = false
         el.Weapon.Visible      = false
+        if el.Name then el.Name.Visible = false end
         el.Chams.Enabled       = false
         el.HealthBarBG.Visible = false
         el.LTH.Visible = false; el.LTV.Visible = false
         el.RTH.Visible = false; el.RTV.Visible = false
         el.LBH.Visible = false; el.LBV.Visible = false
         el.RBH.Visible = false; el.RBV.Visible = false
+        if el.Tracer then el.Tracer.Visible = false end
+        if el.OffscreenArrow then el.OffscreenArrow.Visible = false end
+        if el.OffscreenDistance then el.OffscreenDistance.Visible = false end
     end
 
     if not ESP.Enabled then Hide() return end
     if not model or not model.Parent or not isValidPlayer(model) then
         task.defer(function()
             if espData.folder then espData.folder:Destroy() end
+            if el.OffscreenArrow then el.OffscreenArrow:Remove() end
+            if el.OffscreenDistance then el.OffscreenDistance:Remove() end
+            if el.Tracer then el.Tracer:Remove() end
             ActiveESPs[model] = nil
             removeSkeleton(model)
         end)
@@ -1457,11 +1482,73 @@ local function ProcessESP(model, espData)
 
     local Pos, OnScreen = _Camera:WorldToViewportPoint(torso.Position)
     local Dist = (_CamPos - torso.Position).Magnitude / 3.5714285714
-    if not OnScreen or Dist > ESP.MaxDistance then
+
+    if Dist > ESP.MaxDistance then
         Hide()
         removeSkeleton(model)
         return
     end
+
+    if not OnScreen or Pos.Z < 0 then
+        Hide() 
+
+        if ESP.Drawing.OffscreenArrows.Enabled then
+            local arrow = el.OffscreenArrow
+            local distText = el.OffscreenDistance
+            local screenCenter = Vector2.new(_ViewSize.X / 2, _ViewSize.Y / 2)
+            local arrowMargin = 40
+            local arrowRadius = ESP.Drawing.OffscreenArrows.Size
+
+            local targetScreenPos = Vector2.new(Pos.X, Pos.Y)
+            if Pos.Z < 0 then
+                targetScreenPos = screenCenter + (screenCenter - targetScreenPos).Unit * 1000
+            end
+
+            local vecToTarget = (targetScreenPos - screenCenter)
+            local angle = math.atan2(vecToTarget.Y, vecToTarget.X)
+            local halfWidth = _ViewSize.X / 2 - arrowMargin
+            local halfHeight = _ViewSize.Y / 2 - arrowMargin
+            local cosA, sinA = math.cos(angle), math.sin(angle)
+
+            local xInter = halfHeight * cosA / math.abs(sinA)
+            local yInter = halfWidth * sinA / math.abs(cosA)
+            local intersection
+            if math.abs(xInter) <= halfWidth then
+                intersection = Vector2.new(xInter, halfHeight * math.sign(sinA))
+            else
+                intersection = Vector2.new(halfWidth * math.sign(cosA), yInter)
+            end
+
+            local arrowPos = screenCenter + intersection
+            arrow.PointA = arrowPos + Vector2.new(cosA, sinA) * arrowRadius
+            arrow.PointB = arrowPos + Vector2.new(math.cos(angle + math.rad(140)), math.sin(angle + math.rad(140))) * (arrowRadius * 0.8)
+            arrow.PointC = arrowPos + Vector2.new(math.cos(angle - math.rad(140)), math.sin(angle - math.rad(140))) * (arrowRadius * 0.8)
+            local dir = Vector2.new(cosA, sinA)
+            local side = Vector2.new(-sinA, cosA)
+
+            arrow.PointA = arrowPos + dir * arrowRadius
+            arrow.PointB = arrowPos + side * (arrowRadius * 0.8) - dir * arrowRadius
+            arrow.PointC = arrowPos - dir * (arrowRadius * 0.6)
+            arrow.PointD = arrowPos - side * (arrowRadius * 0.8) - dir * arrowRadius
+
+            arrow.Color = ESP.Drawing.OffscreenArrows.RGB
+            arrow.Transparency = ESP.Drawing.OffscreenArrows.Transparency
+            arrow.Visible = true
+
+            if ESP.Drawing.OffscreenArrows.ShowDistance then
+                distText.Text = math.floor(Dist) .. "m"
+                distText.Position = arrowPos - (Vector2.new(cosA, sinA) * (arrowRadius + 15))
+                distText.Color = ESP.Drawing.OffscreenArrows.DistanceRGB
+                distText.Size = ESP.Drawing.OffscreenArrows.DistanceFontSize
+                distText.Visible = true
+            end
+        end
+        return 
+    end
+
+   
+    el.OffscreenArrow.Visible = false
+    el.OffscreenDistance.Visible = false
 
     local yInset = _GuiInsetY
 
@@ -1587,6 +1674,26 @@ local function ProcessESP(model, espData)
         end
     end
 
+    if ESP.Drawing.Tracers.Enabled then
+        local origin = ESP.Drawing.Tracers.Origin
+        local startPos
+        if origin == "Top" then
+            startPos = Vector2.new(_ViewSize.X / 2, 0)
+        elseif origin == "Center" then
+            startPos = Vector2.new(_ViewSize.X / 2, _ViewSize.Y / 2)
+        else  
+            startPos = Vector2.new(_ViewSize.X / 2, _ViewSize.Y)
+        end
+        el.Tracer.From         = startPos
+        el.Tracer.To           = Vector2.new(Pos.X, Pos.Y)
+        el.Tracer.Color        = ESP.Drawing.Tracers.RGB
+        el.Tracer.Thickness    = ESP.Drawing.Tracers.Thickness
+        el.Tracer.Transparency = ESP.Drawing.Tracers.Transparency
+        el.Tracer.Visible      = true
+    else
+        el.Tracer.Visible = false
+    end
+
     if ESP.Drawing.Skeleton.Enabled and not ActiveSkeletons[model] then
         createSkeletonESP(model)
     end
@@ -1690,22 +1797,6 @@ local function CreateESP(CharacterModel)
     ESPCounter = ESPCounter + 1
     local folder = Functions:Create("Folder", { Parent = ScreenGui, Name = "E_" .. ESPCounter })
 
-    local Name = Functions:Create("TextLabel", {
-        Parent               = folder, Name = "N",
-        Position             = UDim2.new(0.5, 0, 0, 0),
-        Size                 = UDim2.new(0, 200, 0, ESP.FontSize + 4),
-        AnchorPoint          = Vector2.new(0.5, 1),
-        BackgroundTransparency = 1,
-        TextColor3           = Color3.fromRGB(255, 255, 255),
-        Font                 = Enum.Font.Code,
-        TextSize             = ESP.FontSize,
-        TextStrokeTransparency = 0,
-        TextStrokeColor3     = Color3.fromRGB(0, 0, 0),
-        RichText             = true,
-        TextScaled           = false,
-        Visible              = false,
-    })
-
     local Weapon = Functions:Create("TextLabel", {
         Parent               = folder, Name = "W",
         Position             = UDim2.new(0.5, 0, 0, 0),
@@ -1793,12 +1884,38 @@ local function CreateESP(CharacterModel)
         })
     end
 
+    local Tracer = Drawing.new("Line")
+    Tracer.Visible      = false
+    Tracer.Color        = ESP.Drawing.Tracers.RGB
+    Tracer.Thickness    = ESP.Drawing.Tracers.Thickness
+    Tracer.Transparency = ESP.Drawing.Tracers.Transparency
+    Tracer.ZIndex       = 1
+
+    local OffscreenArrow = Drawing.new("Triangle")
+    local OffscreenArrow = Drawing.new("Quad")
+    OffscreenArrow.Visible      = false
+    OffscreenArrow.Filled       = true
+    OffscreenArrow.Color        = ESP.Drawing.OffscreenArrows.RGB
+    OffscreenArrow.Transparency = ESP.Drawing.OffscreenArrows.Transparency
+    OffscreenArrow.Radius       = ESP.Drawing.OffscreenArrows.Size
+    OffscreenArrow.ZIndex       = 1
+
+    local OffscreenDistance = Drawing.new("Text")
+    OffscreenDistance.Visible      = false
+    OffscreenDistance.Center       = true
+    OffscreenDistance.Outline      = true
+    OffscreenDistance.Font         = Drawing.Fonts.UI
+    OffscreenDistance.Color        = ESP.Drawing.OffscreenArrows.DistanceRGB or Color3.new(1,1,1)
+    OffscreenDistance.Size         = ESP.Drawing.OffscreenArrows.DistanceFontSize or 12
+
     ActiveESPs[CharacterModel] = {
         folder   = folder,
         rotAngle = -45,
         lastTick = tick(),
         elements = {
-            Name        = Name,
+            OffscreenArrow    = OffscreenArrow,
+            OffscreenDistance = OffscreenDistance,
+            Tracer      = Tracer,
             Weapon      = Weapon,
             Box         = Box,
             Gradient1   = Gradient1,
@@ -1822,6 +1939,9 @@ end
 function Functions:CleanAllESPs()
     for model, espData in pairs(ActiveESPs) do
         if espData.folder then espData.folder:Destroy() end
+        if espData.elements and espData.elements.OffscreenArrow then espData.elements.OffscreenArrow:Remove() end
+        if espData.elements and espData.elements.OffscreenDistance then espData.elements.OffscreenDistance:Remove() end
+        if espData.elements and espData.elements.Tracer then espData.elements.Tracer:Remove() end
         ActiveESPs[model] = nil
     end
     for model in pairs(RadarState.Dots) do
@@ -1864,11 +1984,19 @@ local function mvm()
         local espData = ActiveESPs[v]
         if espData then
             if espData.folder then espData.folder:Destroy() end
+            if espData.elements and espData.elements.OffscreenArrow then espData.elements.OffscreenArrow:Remove() end
+            if espData.elements and espData.elements.OffscreenDistance then espData.elements.OffscreenDistance:Remove() end
+            if espData.elements and espData.elements.Tracer then espData.elements.Tracer:Remove() end
             ActiveESPs[v] = nil
         end
         dropRadarDot(v)
         removeSkeleton(v)
         TeamHighlightCache[v] = nil
+        local associatedChar = VMtoChar[v]
+        if associatedChar then
+            removeNameLabel(associatedChar)
+            CharToVM[associatedChar] = nil 
+        end
         VMtoChar[v] = nil
         markProxyCacheDirty()
     end)
@@ -1919,6 +2047,23 @@ ESP.SetSkeletonThickness = function(thickness)
         end
     end
 end
+
+ESP.ToggleTracers = function(enabled) ESP.Drawing.Tracers.Enabled = enabled end
+ESP.SetTracersColor = function(color) if typeof(color) == "Color3" then ESP.Drawing.Tracers.RGB = color end end
+ESP.SetTracersOrigin = function(origin)
+    local origins = { Top = true, Center = true, Bottom = true }
+    if origins[origin] then
+        ESP.Drawing.Tracers.Origin = origin
+    end
+end
+
+ESP.ToggleOffscreenArrows = function(enabled) ESP.Drawing.OffscreenArrows.Enabled = enabled end
+ESP.SetOffscreenArrowsColor = function(color) if typeof(color) == "Color3" then ESP.Drawing.OffscreenArrows.RGB = color end end
+ESP.SetOffscreenArrowsSize = function(size) if type(size) == "number" and size > 0 then ESP.Drawing.OffscreenArrows.Size = size end end
+ESP.SetOffscreenArrowsTransparency = function(trans) if type(trans) == "number" and trans >= 0 and trans <= 1 then ESP.Drawing.OffscreenArrows.Transparency = trans end end
+ESP.ToggleOffscreenArrowsDistance = function(enabled) ESP.Drawing.OffscreenArrows.ShowDistance = enabled end
+ESP.SetOffscreenArrowsDistanceColor = function(color) if typeof(color) == "Color3" then ESP.Drawing.OffscreenArrows.DistanceRGB = color end end
+ESP.SetOffscreenArrowsDistanceFontSize = function(size) if type(size) == "number" and size > 0 then ESP.Drawing.OffscreenArrows.DistanceFontSize = size end end
 
 ESP.SetCornerColor     = function(c) if typeof(c) == "Color3" then ESP.Drawing.Boxes.Corner.RGB = c end end
 ESP.SetCornerThickness = function(t) if type(t) == "number" and t > 0 then ESP.Drawing.Boxes.Corner.Thickness = t end end
