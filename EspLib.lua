@@ -1097,7 +1097,7 @@ local function updateObjectLabels()
     local anyEnabled = false
     for _, key in pairs(nameToKey) do
         local cfg = oc[key]
-        if cfg and (cfg.Enabled or masterNames or (cfg.Name and cfg.Name.Enabled)) then
+        if cfg and (masterNames or (cfg.Name and cfg.Name.Enabled)) then
             anyEnabled = true
             break
         end
@@ -1115,7 +1115,7 @@ local function updateObjectLabels()
     for _, child in ipairs(Workspace:GetChildren()) do
         local key = nameToKey[child.Name]
         local cfg = key and oc[key]
-        if not cfg or not (cfg.Enabled or masterNames or (cfg.Name and cfg.Name.Enabled)) then
+        if not cfg or not (masterNames or (cfg.Name and cfg.Name.Enabled)) then
             dropObjectLabel(child)
             continue
         end
